@@ -55,12 +55,12 @@ void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
 static const u1_t PROGMEM APPKEY[16] = { 0xD9, 0x36, 0xC1, 0xB3, 0x69, 0x96, 0x63, 0x22, 0x03, 0x37, 0x53, 0x34, 0x34, 0x8B, 0x09, 0xFF };
 void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
 
-static uint8_t mydata[] = "Hello, world!";
-static osjob_t sendjob;
+/*
+ * Job / thread that runs the status updates
+ */
+static osjob_t statusJob;
 
-// Schedule TX every this many seconds (might become longer due to duty
-// cycle limitations).
-const unsigned TX_INTERVAL = 60;
+static uint8_t mydata[] = "Hello, world!";
 
 // Pin mapping
 const lmic_pinmap lmic_pins = {
@@ -73,6 +73,21 @@ const lmic_pinmap lmic_pins = {
 const boolean LOGGING_ENABLED = false;
 #define logMsg(M)  (LOGGING_ENABLED == true ? SerialUSB.print(M) : false)
 
+
+/*
+ * How often to send status and startup requests out.
+ *  1. The startup request will trigger a 'upload' request from the control server to set the 
+ *     Real Time Clock and update the current power schedule.
+ *  2. Include the power relay status and the current schedule for turning power on / off
+ *
+ * Schedule TX every this many seconds (might become longer due to duty cycle limitations).
+ */
+const unsigned TX_INTERVAL = 300;   // 5 min. 
+
+/*
+ * Are we currenty waiting for a transmission to complete, if so a new tx will not be initiated
+ */
+static boolean txInProg = false;
 
 void initSerial() {
    if (LOGGING_ENABLED == true) {
@@ -157,8 +172,8 @@ void onEvent (ev_t ev) {
               logMsg(LMIC.dataLen);
               logMsg(F(" bytes of payload\n"));
             }
-            // Schedule next transmission
-            os_setTimedCallback(&sendjob, os_getTime()+sec2osticks(TX_INTERVAL), do_send);
+            // Mark the transmission complete
+            txInProg == false;
             break;
         case EV_LOST_TSYNC:
             logMsg(F("EV_LOST_TSYNC\n"));
@@ -184,7 +199,30 @@ void onEvent (ev_t ev) {
     }
 }
 
-void do_send(osjob_t* j){
+/*
+ * Main work method, will perform any scheduled tasks and send status updates
+ *  1. Check the schedule and turn the power on or off if needed.
+ *  2. Send a status update with the current power state and schedule
+ */
+void statusUpdate(osjob_t* j) {
+    /*
+     * Check the current schedule for any power on / off changes
+     */
+
+    /*
+     * Trigger the status update transmit
+     */
+    if (txInProg == false) {
+        do_send();
+    }
+
+    /*
+     * Schedule the next status / work update run
+     */
+    os_setTimedCallback(&statusJob, os_getTime()+sec2osticks(TX_INTERVAL), statusUpdate);
+}
+
+void do_send() {
     // Check if there is not a current TX/RX job running
     if (LMIC.opmode & OP_TXRXPEND) {
         logMsg(F("OP_TXRXPEND, not sending\n"));
@@ -221,7 +259,7 @@ void setup() {
     LMIC_setDrTxpow(DR_SF7,14);
 
     // Start job (sending automatically starts OTAA too)
-    do_send(&sendjob);
+    statusUpdate(&statusJob);
 }
 
 void loop() {
