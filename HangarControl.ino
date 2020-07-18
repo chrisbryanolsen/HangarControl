@@ -30,8 +30,9 @@
 #include <hal/hal.h>
 #include <SPI.h>
 #include <RTCZero.h>
+#include <ArduinoJson.h>
 
-/* Create an rtc object */
+/* Create an Real Time Clock object */
 RTCZero rtc;
 
 // This EUI must be in little-endian format, so least-significant-byte
@@ -67,9 +68,12 @@ const lmic_pinmap lmic_pins = {
     .dio = {6, 10, 11}, // RFM Interrupt, RFM LoRa pin, RFM LoRa pin
 };
 
-const boolean LOGGING_ENABLED = false;
-#define logMsg(M)  (LOGGING_ENABLED == true ? SerialUSB.print(M) : false)
-
+/*
+ * Expected JSON String from the control server.
+ * Will be sent when requested at startup 
+ */
+   char configJson[] =
+      "{\"sensor\":\"gps\",\"time\":1351824120,\"data\":[48.756080,2.302038]}";
 
 /*
  * How often to send status and startup requests out.
@@ -86,6 +90,12 @@ const unsigned TX_INTERVAL = 300;   // 5 min.
  */
 static boolean txInProg = false;
 
+const boolean LOGGING_ENABLED = false;
+#define logMsg(M)  (LOGGING_ENABLED == true ? SerialUSB.print(M) : false)
+
+/*
+ * If logging is turned on get the serial port setup and wait for it to be ready
+ */
 void initSerial() {
    if (LOGGING_ENABLED == true) {
      SerialUSB.begin(115200);
@@ -164,6 +174,7 @@ void onEvent (ev_t ev) {
             logMsg(F("EV_TXCOMPLETE (includes waiting for RX windows)\n"));
             if (LMIC.txrxFlags & TXRX_ACK)
               logMsg(F("Received ack\n"));
+              
             if (LMIC.dataLen) {
               logMsg(F("Received "));
               logMsg(LMIC.dataLen);
@@ -238,6 +249,7 @@ void setup() {
      
     // LMIC init
     os_init();
+    
     // Reset the MAC state. Session and pending data transfers will be discarded.
     LMIC_reset();
     
