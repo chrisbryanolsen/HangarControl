@@ -1,0 +1,4 @@
+{
+    "board": "SparkFun:samd:samd21_proRF",
+    "programmer": "Atmel-ICE (AVR)"
+}
