@@ -83,6 +83,11 @@ void network_time_cb(void * pUserData, int flagSuccess) {
   }
 }
 
+void requestTime() {
+  char *ptr = NULL;
+  LMIC_requestNetworkTime(&network_time_cb, ptr);
+}
+
 /*
  * If logging is turned on get the serial port setup and wait for it to be ready
  */
@@ -158,6 +163,7 @@ void onEvent (ev_t ev) {
             // Disable link check validation (automatically enabled
             // during join, but not supported by TTN at this time).
             LMIC_setLinkCheckMode(0);
+            requestTime();
             break;
         case EV_RFU1:
             logMsg(F("EV_RFU1\n"));
@@ -267,9 +273,6 @@ void setup()
   // https://github.com/TheThingsNetwork/gateway-conf/blob/master/US-global_conf.json
   LMIC_selectSubBand(1);
 #endif
-
-  char *ptr = NULL;
-  LMIC_requestNetworkTime(&network_time_cb, ptr);
 
   // Start job (sending automatically starts OTAA too)
   statusUpdate(&statusJob);
