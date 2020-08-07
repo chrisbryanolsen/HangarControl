@@ -84,6 +84,7 @@ void network_time_cb(void * pUserData, int flagSuccess) {
 }
 
 void requestTime() {
+  logMsg(F("Network Time Requested\n"));
   char *ptr = NULL;
   LMIC_requestNetworkTime(&network_time_cb, ptr);
 }
