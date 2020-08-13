@@ -42,6 +42,7 @@ static osjob_t statusJob;
  * Command uplink queue and structure
  */
 static StaticJsonDocument<MAX_LEN_PAYLOAD> cmdJson;
+static StaticJsonDocument<MAX_LEN_PAYLOAD> payloadJson;
 static boolean startUpComplete = false;
 
 // Pin mapping
@@ -140,7 +141,49 @@ void processDownlink(lmic_t LMIC) {
     logMsg(F(" bytes of payload\n"));
 
     // Data is in: LMIC.frame + LMIC.dataBeg, LMIC.dataLen
+    payloadJson.clear();
+    DeserializationError err = deserializeMsgPack(payloadJson, LMIC.frame + LMIC.dataBeg, LMIC.dataLen);
+    if (err) {
+        logMsg(F("deserializeJson() failed with code "));
+        logMsg(err.c_str());
+    } else {
+        const String cmd = payloadJson["cmd"];
+        const u_int32_t curTime = payloadJson["cur-time"];
+        
+        logMsg(F("Command: "));
+        logMsg(cmd);
+        logMsg(F(", Time: "));
+        logMsg(curTime);
+        logMsg(F("\n"));
+
+        if (cmd.equalsIgnoreCase("init") == true) {
+            rtc.setEpoch(curTime);
+            startUpComplete = true;
+        }
+    }
   }
+}
+
+// We have completed joining the network
+// 1. set the LMIC / TTN options required
+// 2. Request the network time (This does not seem to be working yet on the TTN)
+// 3. Send the Startup command to the HangarServer
+void joinComplete() {
+    logMsg(F("EV_JOINED\n"));
+
+    // Disable link check validation (automatically enabled
+    // during join, but not supported by TTN at this time).
+    LMIC_setLinkCheckMode(0);
+    requestTime();
+
+    /*
+     * Check the current schedule for any power on / off changes
+     */
+    if (startUpComplete == false) {
+        logMsg(F("Queue Startup Req\n"));
+        cmdJson["cmd"] = "start";
+        cmdJson["my-time"] = rtc.getEpoch();
+    }
 }
 
 void queueCommand() {
@@ -169,11 +212,7 @@ void onEvent (ev_t ev) {
             logMsg(F("EV_JOINING\n"));
             break;
         case EV_JOINED:
-            logMsg(F("EV_JOINED\n"));
-            // Disable link check validation (automatically enabled
-            // during join, but not supported by TTN at this time).
-            LMIC_setLinkCheckMode(0);
-            requestTime();
+            joinComplete();
             break;
         case EV_RFU1:
             logMsg(F("EV_RFU1\n"));
@@ -240,8 +279,10 @@ void do_send() {
      * If we have any commands queued internally then prepare upstream data transmission at the next possible time.
      * And add the command to the LMIC send queue.
      */
-        logMsg(F("JSON, size: "));
+        logMsg(F("JSON, Entries: "));
         logMsg(cmdJson.size());
+        logMsg(F("\n"));
+
         if (cmdJson.size() > 0) {
             logMsg(F("MessagePack, size: "));
             logMsg(measureJson(cmdJson));
@@ -252,6 +293,10 @@ void do_send() {
             if (sndErr != 0) {
                 logMsg(F("Send Command error : "));
                 logMsg(sndErr);
+                logMsg(F("\n"));
+            } else {
+                logMsg(F("Transmit, size: "));
+                logMsg(msgLen);
                 logMsg(F("\n"));
             }
 
@@ -266,15 +311,6 @@ void do_send() {
  *  2. Send a status update with the current power state and schedule
  */
 void statusUpdate(osjob_t* j) {
-    /*
-     * Check the current schedule for any power on / off changes
-     */
-    if (startUpComplete == false) {
-        logMsg(F("Queue Startup Req\n"));
-        cmdJson["cmd"] = "start";
-        cmdJson["my-time"] = rtc.getEpoch();
-    }
-
     /*
      * Check the current schedule for any power on / off changes
      */
