@@ -38,7 +38,11 @@ void os_getDevKey(u1_t *buf) { memcpy_P(buf, APPKEY, 16); }
  */
 static osjob_t statusJob;
 
-static uint8_t mydata[] = "Hello, world!";
+/*
+ * Command uplink queue and structure
+ */
+static StaticJsonDocument<MAX_LEN_PAYLOAD> cmdJson;
+static boolean startUpComplete = false;
 
 // Pin mapping
 const lmic_pinmap lmic_pins = {
@@ -139,6 +143,11 @@ void processDownlink(lmic_t LMIC) {
   }
 }
 
+void queueCommand() {
+    cmdJson["cmd"] = "start";
+    cmdJson["my-time"] = rtc.getEpoch();
+}
+
 void onEvent (ev_t ev) {
     //logMsg(os_getTime());
     printRTCTime();
@@ -217,7 +226,7 @@ void onEvent (ev_t ev) {
          default:
             logMsg(F("Unknown event: "));
             logMsg(ev);
-            logMsg("\n");
+            logMsg(F("\n"));
             break;
     }
 }
@@ -227,11 +236,28 @@ void do_send() {
     if (LMIC.opmode & OP_TXRXPEND) {
         logMsg(F("OP_TXRXPEND, not sending\n"));
     } else {
-        // Prepare upstream data transmission at the next possible time.
-        LMIC_setTxData2(1, mydata, sizeof(mydata)-1, 0);
-        logMsg(F("Packet queued\n"));
+    /*
+     * If we have any commands queued internally then prepare upstream data transmission at the next possible time.
+     * And add the command to the LMIC send queue.
+     */
+        logMsg(F("JSON, size: "));
+        logMsg(cmdJson.size());
+        if (cmdJson.size() > 0) {
+            logMsg(F("MessagePack, size: "));
+            logMsg(measureJson(cmdJson));
+            logMsg(F("\n"));
+
+            size_t msgLen = serializeMsgPack(cmdJson, &LMIC.pendTxData, MAX_LEN_PAYLOAD);
+            lmic_tx_error_t sndErr = LMIC_setTxData2(1, NULL, msgLen, 0);
+            if (sndErr != 0) {
+                logMsg(F("Send Command error : "));
+                logMsg(sndErr);
+                logMsg(F("\n"));
+            }
+
+            cmdJson.clear();
+        }
     }
-    // Next TX is scheduled after TX_COMPLETE event.
 }
 
 /*
@@ -243,9 +269,18 @@ void statusUpdate(osjob_t* j) {
     /*
      * Check the current schedule for any power on / off changes
      */
+    if (startUpComplete == false) {
+        logMsg(F("Queue Startup Req\n"));
+        cmdJson["cmd"] = "start";
+        cmdJson["my-time"] = rtc.getEpoch();
+    }
 
     /*
-     * Trigger the status update transmit
+     * Check the current schedule for any power on / off changes
+     */
+
+    /*
+     * Attempt to send any queued commands.
      */
     if (txInProg == false) {
         do_send();
