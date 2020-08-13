@@ -315,8 +315,23 @@ void statusUpdate(osjob_t* j) {
     }
 
     /*
+     * Send a status / power state update every 5 min.
+     */
+    if (rtc.getMinutes() % 5 == 0) {
+        boolean state[2];
+        state[0] = true;   // XXX Temp demostrate power port 1 is on
+        state[1] = false;  // XXX Temp demostrate power port 2 is off
+
+        logMsg(F("Queue Status Req\n"));
+        cmdJson["cmd"] = "status";
+        cmdJson["my-time"] = rtc.getEpoch();
+        cmdJson["state"] = state;
+    }
+
+    /*
      * Check the current schedule for any power on / off changes
      */
+
 
     /*
      * Attempt to send any queued commands.
