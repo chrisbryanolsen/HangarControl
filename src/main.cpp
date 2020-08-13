@@ -61,7 +61,7 @@ const lmic_pinmap lmic_pins = {
  *
  * Schedule TX every this many seconds (might become longer due to duty cycle limitations).
  */
-const unsigned TX_INTERVAL = 300;   // 5 min. 
+const unsigned TX_INTERVAL = 30;
 
 /*
  * Are we currenty waiting for a transmission to complete, if so a new tx will not be initiated
@@ -176,14 +176,6 @@ void joinComplete() {
     LMIC_setLinkCheckMode(0);
     requestTime();
 
-    /*
-     * Check the current schedule for any power on / off changes
-     */
-    if (startUpComplete == false) {
-        logMsg(F("Queue Startup Req\n"));
-        cmdJson["cmd"] = "start";
-        cmdJson["my-time"] = rtc.getEpoch();
-    }
 }
 
 void queueCommand() {
@@ -279,7 +271,8 @@ void do_send() {
      * If we have any commands queued internally then prepare upstream data transmission at the next possible time.
      * And add the command to the LMIC send queue.
      */
-        logMsg(F("JSON, Entries: "));
+        printRTCTime();
+        logMsg(F(" Command JSON, Entries: "));
         logMsg(cmdJson.size());
         logMsg(F("\n"));
 
@@ -311,6 +304,16 @@ void do_send() {
  *  2. Send a status update with the current power state and schedule
  */
 void statusUpdate(osjob_t* j) {
+
+    /*
+     * Send the initial startup commond just once
+     */
+    if (startUpComplete == false) {
+        logMsg(F("Queue Startup Req\n"));
+        cmdJson["cmd"] = "start";
+        cmdJson["my-time"] = rtc.getEpoch();
+    }
+
     /*
      * Check the current schedule for any power on / off changes
      */
